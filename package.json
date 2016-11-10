@@ -1,0 +1,24 @@
+{
+  "name": "webtorrent-remote",
+  "version": "0.0.0",
+  "description": "Run WebTorrent in one process, control it from another process or even another machine",
+  "scripts": {
+    "test": "standard"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dcposch/webtorrent-remote.git"
+  },
+  "author": "",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/dcposch/webtorrent-remote/issues"
+  },
+  "homepage": "https://github.com/dcposch/webtorrent-remote#readme",
+  "devDependencies": {
+    "standard": "^8.5.0"
+  },
+  "dependencies": {
+    "webtorrent": "^0.97.2"
+  }
+}
