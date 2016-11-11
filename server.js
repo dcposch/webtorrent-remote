@@ -1,4 +1,3 @@
-const messages = require('./messages')
 const WebTorrent = require('webtorrent')
 
 // Runs WebTorrent.
@@ -30,9 +29,9 @@ module.exports = class WebTorrentRemoteServer {
   receive (message) {
     this.clients[message.clientKey] = message.clientKey
     switch (message.type) {
-      case messages.ADD_TORRENT:
+      case 'add-torrent':
         return handleAddTorrent(this)
-      case messages.CREATE_SERVER:
+      case 'create-server':
         return handleCreateServer(this)
       default:
         console.error('Ignoring unknown message type: ' + JSON.stringify(message))
@@ -44,7 +43,7 @@ module.exports = class WebTorrentRemoteServer {
 function addWebTorrentEvents (server) {
   server._webtorrent.on('error', function (err) {
     sendToAllClients(server, {
-      type: messages.ERROR,
+      type: 'error',
       error: err
     })
   })
@@ -52,14 +51,14 @@ function addWebTorrentEvents (server) {
 
 // Event handlers for individual torrents
 function addTorrentEvents (server, torrent) {
-  torrent.on('infohash', () => sendInfo(server, torrent, messages.INFOHASH))
-  torrent.on('metadata', () => sendInfo(server, torrent, messages.METADATA))
-  torrent.on('progress', () => sendProgress(server, torrent, messages.PROGRESS))
-  torrent.on('done', () => sendProgress(server, torrent, messages.DONE))
+  torrent.on('infohash', () => sendInfo(server, torrent, 'infohash'))
+  torrent.on('metadata', () => sendInfo(server, torrent, 'metadata'))
+  torrent.on('progress', () => sendProgress(server, torrent, 'progress'))
+  torrent.on('done', () => sendProgress(server, torrent, 'done'))
 }
 
 function handleAddTorrent (server, message) {
-  var torrent = server.client().add(message.torrentID, message.options)
+  var torrent = server.webtorrent().add(message.torrentID, message.options)
   // TODO: handle the case where two different clients both open the same infohash
   if (torrent.clientKey) throw new Error('torrent already has a clientKey')
   torrent.clientKey = message.clientKey
@@ -67,9 +66,9 @@ function handleAddTorrent (server, message) {
   addTorrentEvents(server, torrent)
 }
 
-function handleCreateServer (server) {
-  // TODO
-  console.log('handleCreateServer UNIMP')
+function handleCreateServer (server, message) {
+  var torrent = getTorrentByKey(server, message.torrentKey)
+  torrent.createServer(message.options)
 }
 
 function sendInfo (server, torrent, type) {
@@ -100,4 +99,10 @@ function sendToAllClients (server, message) {
     var clientMessage = Object.assign({}, message, {clientKey})
     server._send(clientMessage)
   }
+}
+
+function getTorrentByKey (server, torrentKey) {
+  var torrent = server.webtorrent().torrents.filter((t) => t.torrentKey === torrentKey)[0]
+  if (!torrent) throw new Error('Missing torrentKey: ' + torrentKey)
+  return torrent
 }

@@ -1,6 +1,5 @@
 const EventEmitter = require('events')
 const crypto = require('crypto')
-const messages = require('./messages')
 
 // Provides the WebTorrent API.
 // Talks to a WebTorrentRemoteServer instance in another process or even another machine.
@@ -24,17 +23,17 @@ module.exports = class WebTorrentRemoteClient extends EventEmitter {
       throw new Error('Wrong clientKey, expected ' + this.clientKey + ': ' + JSON.stringify(message))
     }
     switch (message.type) {
-      case messages.INFOHASH:
+      case 'infohash':
         return handleInfo(this, message)
-      case messages.METADATA:
+      case 'metadata':
         return handleInfo(this, message)
-      case messages.PROGRESS:
+      case 'progress':
         return handleProgress(this, message)
-      case messages.DONE:
+      case 'done':
         return handleProgress(this, message)
-      case messages.SERVER_READY:
+      case 'server-ready':
         return handleServerReady(this, message)
-      case messages.ERROR:
+      case 'error':
         return handleError(this, message)
       default:
         console.error('Ignoring unknown message type: ' + JSON.stringify(message))
@@ -50,7 +49,7 @@ module.exports = class WebTorrentRemoteClient extends EventEmitter {
     const torrentKey = generateUniqueKey()
     this._send({
       clientKey: this._clientKey,
-      type: messages.ADD_TORRENT,
+      type: 'add-torrent',
       torrentKey: torrentKey,
       torrentID: torrentID,
       options: options
@@ -77,7 +76,7 @@ class RemoteTorrent extends EventEmitter {
   createServer (options) {
     this.client._send({
       clientKey: this.client._clientKey,
-      type: messages.CREATE_SERVER,
+      type: 'create-server',
       torrentKey: this.key,
       options: options
     })
