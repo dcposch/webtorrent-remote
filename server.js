@@ -1,4 +1,5 @@
 const WebTorrent = require('webtorrent')
+const parseTorrent = require('parse-torrent')
 
 // Runs WebTorrent.
 // Connects to trackers, the DHT, BitTorrent peers, and WebTorrent peers.
@@ -58,12 +59,22 @@ function addTorrentEvents (server, torrent) {
 }
 
 function handleAddTorrent (server, message) {
-  var torrent = server.webtorrent().add(message.torrentID, message.options)
-  // TODO: handle the case where two different clients both open the same infohash
-  if (torrent.clientKey) throw new Error('torrent already has a clientKey')
-  torrent.clientKey = message.clientKey
-  torrent.torrentKey = message.torrentKey
-  addTorrentEvents(server, torrent)
+  var wt = server.webtorrent()
+
+  // First, see if we've already joined this swarm
+  var infohash = parseTorrent(message.torrentID).infoHash
+  var torrent = wt.torrents.filter((t) => t.infoHash === infohash)[0]
+
+  // Otherwise, join it
+  if (!torrent) {
+    torrent = wt.add(message.torrentID, message.options)
+    torrent.clients = []
+    addTorrentEvents(server, torrent)
+  }
+
+  // Eithe way, subscribe this client to updates for tihs swarm
+  var {clientKey, torrentKey} = message
+  torrent.clients.push({clientKey, torrentKey})
 }
 
 function handleCreateServer (server, message) {
@@ -72,10 +83,10 @@ function handleCreateServer (server, message) {
 }
 
 function sendInfo (server, torrent, type) {
-  server._send({
+  var message = {
     type: type,
-    clientKey: torrent.clientKey,
     torrent: {
+      key: torrent.key,
       name: torrent.name,
       infohash: torrent.infohash,
       progress: torrent.progress,
@@ -83,14 +94,22 @@ function sendInfo (server, torrent, type) {
         name: file.name
       }))
     }
-  })
+  }
+  sendToTorrentClients(server, torrent, message)
 }
 
 function sendProgress (server, torrent, type) {
-  server._send({
+  var message = {
     type: type,
-    clientKey: torrent.clientKey,
     progress: torrent.progress
+  }
+  sendToTorrentClients(server, torrent, message)
+}
+
+function sendToTorrentClients (server, torrent, message) {
+  torrent.clients.forEach(function (client) {
+    var clientMessage = Object.assign({}, message, client)
+    server._send(clientMessage)
   })
 }
 
