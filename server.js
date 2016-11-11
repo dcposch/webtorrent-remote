@@ -59,20 +59,27 @@ function addTorrentEvents (server, torrent) {
 
 function handleAddTorrent (server, message) {
   const wt = server.webtorrent()
+  const {clientKey, torrentKey} = message
 
   // First, see if we've already joined this swarm
   const infohash = parseTorrent(message.torrentID).infoHash
   let torrent = wt.torrents.find((t) => t.infoHash === infohash)
 
-  // Otherwise, join it
-  if (!torrent) {
+  if (torrent) {
+    // If so, send the `infohash` and `metadata` events and a progress update right away
+    const keys = {clientKey, torrentKey}
+    server._send(Object.assign(getInfoMessage(server, torrent, 'infohash'), keys))
+    server._send(Object.assign(getInfoMessage(server, torrent, 'metadata'), keys))
+    const progressType = torrent.downloaded === torrent.length ? 'done' : 'progress'
+    server._send(Object.assign(getProgressMessage(server, torrent, progressType), keys))
+  } else {
+    // Otherwise, join the swarm
     torrent = wt.add(message.torrentID, message.options)
     torrent._clients = []
     addTorrentEvents(server, torrent)
   }
 
-  // Either way, subscribe this client to updates for tihs swarm
-  const {clientKey, torrentKey} = message
+  // Either way, subscribe this client to future updates for this swarm
   torrent._clients.push({clientKey, torrentKey})
 }
 
@@ -103,7 +110,17 @@ function handleCreateServer (server, message) {
 }
 
 function sendInfo (server, torrent, type) {
-  var message = {
+  var message = getInfoMessage(server, torrent, type)
+  sendToTorrentClients(server, torrent, message)
+}
+
+function sendProgress (server, torrent, type) {
+  var message = getProgressMessage(server, torrent, type)
+  sendToTorrentClients(server, torrent, message)
+}
+
+function getInfoMessage (server, torrent, type) {
+  return {
     type: type,
     torrent: {
       key: torrent.key,
@@ -116,11 +133,10 @@ function sendInfo (server, torrent, type) {
       }))
     }
   }
-  sendToTorrentClients(server, torrent, message)
 }
 
-function sendProgress (server, torrent, type) {
-  var message = {
+function getProgressMessage (server, torrent, type) {
+  return {
     type: type,
     torrent: {
       progress: torrent.progress,
@@ -134,7 +150,6 @@ function sendProgress (server, torrent, type) {
       timeRemaining: torrent.timeRemaining
     }
   }
-  sendToTorrentClients(server, torrent, message)
 }
 
 function sendError (server, torrent, e, type) {
