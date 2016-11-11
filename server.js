@@ -45,7 +45,7 @@ function addWebTorrentEvents (server) {
   server._webtorrent.on('error', function (err) {
     sendToAllClients(server, {
       type: 'error',
-      error: err
+      error: {message: err.message, stack: err.stack}
     })
   })
 }
@@ -56,6 +56,7 @@ function addTorrentEvents (server, torrent) {
   torrent.on('metadata', () => sendInfo(server, torrent, 'metadata'))
   torrent.on('progress', () => sendProgress(server, torrent, 'progress'))
   torrent.on('done', () => sendProgress(server, torrent, 'done'))
+  torrent.on('error', () => sendError(server, torrent))
 }
 
 function handleAddTorrent (server, message) {
@@ -72,7 +73,7 @@ function handleAddTorrent (server, message) {
     addTorrentEvents(server, torrent)
   }
 
-  // Eithe way, subscribe this client to updates for tihs swarm
+  // Either way, subscribe this client to updates for tihs swarm
   var {clientKey, torrentKey} = message
   torrent.clients.push({clientKey, torrentKey})
 }
@@ -88,10 +89,11 @@ function sendInfo (server, torrent, type) {
     torrent: {
       key: torrent.key,
       name: torrent.name,
-      infohash: torrent.infohash,
+      infohash: torrent.infoHash,
       progress: torrent.progress,
       files: (torrent.files || []).map((file) => ({
-        name: file.name
+        name: file.name,
+        length: file.length
       }))
     }
   }
@@ -102,6 +104,14 @@ function sendProgress (server, torrent, type) {
   var message = {
     type: type,
     progress: torrent.progress
+  }
+  sendToTorrentClients(server, torrent, message)
+}
+
+function sendError (server, torrent, e) {
+  var message = {
+    type: 'error',
+    error: {message: e.message, stack: e.stack}
   }
   sendToTorrentClients(server, torrent, message)
 }
