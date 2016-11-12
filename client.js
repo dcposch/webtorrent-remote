@@ -31,6 +31,8 @@ module.exports = class WebTorrentRemoteClient extends EventEmitter {
         return handleInfo(this, message)
       case 'upload':
         return handleInfo(this, message)
+      case 'update':
+        return handleInfo(this, message)
       case 'done':
         return handleInfo(this, message)
       case 'server-ready':

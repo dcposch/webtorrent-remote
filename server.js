@@ -14,6 +14,10 @@ module.exports = class WebTorrentRemoteServer {
     this._options = options || {}
     this._webtorrent = null
     this._clients = {}
+    this._torrents = []
+    var updateInterval = this._options.updateInterval
+    if (updateInterval === undefined) updateInterval = 1000
+    if (updateInterval) setInterval(() => sendUpdates(this), updateInterval)
   }
 
   // Returns the underlying WebTorrent object, lazily creating it if needed
@@ -70,12 +74,13 @@ function handleAddTorrent (server, message) {
     const keys = {clientKey, torrentKey}
     server._send(Object.assign(getInfoMessage(server, torrent, 'infohash'), keys))
     server._send(Object.assign(getInfoMessage(server, torrent, 'metadata'), keys))
-    const progressType = torrent.downloaded === torrent.length ? 'done' : 'progress'
+    const progressType = torrent.downloaded === torrent.length ? 'done' : 'update'
     server._send(Object.assign(getProgressMessage(server, torrent, progressType), keys))
   } else {
     // Otherwise, join the swarm
     torrent = wt.add(message.torrentID, message.options)
     torrent._clients = []
+    server._torrents.push(torrent)
     addTorrentEvents(server, torrent)
   }
 
@@ -159,6 +164,12 @@ function sendError (server, torrent, e, type) {
   }
   if (torrent) sendToTorrentClients(server, torrent, message)
   else sendToAllClients(server, message)
+}
+
+function sendUpdates (server) {
+  server._torrents.forEach(function (torrent) {
+    sendProgress(server, torrent, 'update')
+  })
 }
 
 function sendToTorrentClients (server, torrent, message) {
