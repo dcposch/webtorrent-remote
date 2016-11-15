@@ -1,14 +1,13 @@
-webtorrent-remote
-===
+# webtorrent-remote
 
 Run WebTorrent in one process, control it from another process or even another machine.
 
-server process
----
+## server process
 ```js
 var WebTorrentRemoteServer = require('webtorrent-remote/server')
 
-var server = new WebTorrentRemoteServer(send)
+var options = null
+var server = new WebTorrentRemoteServer(send, options)
 
 function send (message) {
   // Send `message` to the correct client. It's JSON serializable.
@@ -20,12 +19,33 @@ function send (message) {
 server.receive(message)
 ```
 
+### server options
+- `trace`: enable log output. default false. useful for debugging and for visibility.
+
+  Example log output:
+
+  ```
+  ```
+
+- `heartbeatTimeout`: remove clients if we don't hear a heartbeat for this many milliseconds.
+  default 30000 (30 seconds). set to 0 to disable the heartbeat check. once a torrent has no
+  remaining clients, it will be removed. once there are no remaining torrents, the whole webtorrent
+  instance will be destroyed. the webtorrent instance is created lazily the first time a client
+  calls `add()`.
+
+- `updateInterval`: send progress updates every x milliseconds to all clients of all torrents.
+  default 1000 (1 second). set to 0 to disable progress updates.
+
+- all WebTorrent options. the options object is passed to the constructor for the underlying
+  WebTorrent instance.
+
 client process(es)
 ---
 ```js
 var WebTorrentRemoteClient = require('webtorrent-remote/client')
 
-var client = new WebTorrentRemoteClient(send)
+var options = null
+var client = new WebTorrentRemoteClient(send, options)
 
 function send (message) {
   // Same as above, except send the message to the server process
@@ -51,3 +71,7 @@ torrent.on('server-ready', function () {
 })
 
 ```
+
+### client options
+- `heartbeat`: send a heartbeat once every x milliseconds. default 5000 (5 seconds). set to 0 to
+  disable heartbeats.

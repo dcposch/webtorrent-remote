@@ -15,6 +15,7 @@ module.exports = class WebTorrentRemoteServer {
     this._webtorrent = null
     this._clients = {}
     this._torrents = []
+
     let updateInterval = this._options.updateInterval
     if (updateInterval === undefined) updateInterval = 1000
     if (updateInterval) setInterval(() => sendUpdates(this), updateInterval)
@@ -34,6 +35,7 @@ module.exports = class WebTorrentRemoteServer {
   receive (message) {
     const {clientKey} = message
     if (!this._clients[clientKey]) {
+      if (this._options.trace) console.log('adding  client, clientKey: ' + clientKey)
       this._clients[clientKey] = {
         clientKey,
         heartbeat: new Date().getTime()
@@ -100,7 +102,8 @@ function handleAddTorrent (server, message) {
   const {clientKey, torrentKey} = message
 
   // First, see if we've already joined this swarm
-  const infohash = parseTorrent(message.torrentID).infoHash
+  const parsed = parseTorrent(message.torrentID)
+  const infohash = parsed.infoHash
   let torrent = wt.torrents.find((t) => t.infoHash === infohash)
 
   if (torrent) {
@@ -112,6 +115,7 @@ function handleAddTorrent (server, message) {
     server._send(Object.assign(getProgressMessage(server, torrent, progressType), keys))
   } else {
     // Otherwise, join the swarm
+    if (server._options.trace) console.log('joining swarm: ' + infohash + ' ' + (parsed.name || ''))
     torrent = wt.add(message.torrentID, message.options)
     torrent.clients = []
     server._torrents.push(torrent)
@@ -173,7 +177,6 @@ function getInfoMessage (server, torrent, type) {
   return {
     type: type,
     torrent: {
-      key: torrent.key,
       name: torrent.name,
       infohash: torrent.infoHash,
       length: torrent.length,
@@ -213,7 +216,8 @@ function sendError (server, torrent, e, type) {
 }
 
 function sendUpdates (server) {
-  const heartbeatTimeout = server._options.heartbeatTimeout
+  let heartbeatTimeout = server._options.heartbeatTimeout
+  if (heartbeatTimeout == null) heartbeatTimeout = 30000
   if (heartbeatTimeout > 0) removeDeadClients(server, heartbeatTimeout)
   server._torrents.forEach(function (torrent) {
     sendProgress(server, torrent, 'update')
@@ -224,10 +228,11 @@ function removeDeadClients (server, heartbeatTimeout) {
   const now = new Date().getTime()
   const isDead = (client) => now - client.heartbeat > heartbeatTimeout
   const deadClientKeys = {}
+  const trace = server._options.trace
   for (const clientKey in server._clients) {
     const client = server._clients[clientKey]
     if (!isDead(client)) continue
-    console.log('torrent client died, clientKey: ' + clientKey)
+    if (trace) console.log('torrent client died, clientKey: ' + clientKey)
     deadClientKeys[clientKey] = true
     delete server._clients[clientKey]
   }
@@ -239,7 +244,7 @@ function removeDeadClients (server, heartbeatTimeout) {
     torrent.clients = torrent.clients.filter((c) => !deadClientKeys[c.clientKey])
     if (torrent.clients.length > 0) return
     torrent.destroy()
-    console.log('torrent destoyed, all clients died: ' + torrent.name + ' / ' + torrent.key)
+    if (trace) console.log('torrent destroyed, all clients died: ' + torrent.name)
   })
 
   // Remove torrents. If the last torrent is gone, kill the client
@@ -247,7 +252,7 @@ function removeDeadClients (server, heartbeatTimeout) {
   if (server._torrents.length > 0 || !server._webtorrent) return
   server._webtorrent.destroy()
   server._webtorrent = null
-  console.log('torrent instance destroyed, all torrents gone')
+  if (trace) console.log('torrent instance destroyed, all torrents gone')
 }
 
 function sendToTorrentClients (server, torrent, message) {

@@ -15,8 +15,11 @@ module.exports = class WebTorrentRemoteClient extends EventEmitter {
     this.clientKey = generateUniqueKey()
     this.torrents = {}
     this._send = send
-    this._options = options = options || {}
-    if (options.heartbeat > 0) setInterval(() => sendHeartbeat(this), options.heartbeat)
+    this._options = options || {}
+
+    let heartbeat = this._options.heartbeat
+    if (heartbeat == null) heartbeat = 5000
+    if (heartbeat > 0) setInterval(() => sendHeartbeat(this), heartbeat)
   }
 
   // Receives a message from the WebTorrentRemoteServer
