@@ -22,7 +22,7 @@ module.exports = class WebTorrentRemoteClient extends EventEmitter {
   // Receives a message from the WebTorrentRemoteServer
   receive (message) {
     if (message.clientKey !== this.clientKey) {
-      console.error('ignoring message, expected clientKey ' + this.clientKey +
+      return console.error('ignoring message, expected clientKey ' + this.clientKey +
         ': ' + JSON.stringify(message))
     }
     switch (message.type) {
@@ -50,7 +50,7 @@ module.exports = class WebTorrentRemoteClient extends EventEmitter {
       case 'torrent-subscribed':
         return handleSubscribed(this, message)
       default:
-        console.error('Ignoring unknown message type: ' + JSON.stringify(message))
+        console.error('ignoring message, unknown type: ' + JSON.stringify(message))
     }
   }
 
