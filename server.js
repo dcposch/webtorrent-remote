@@ -15,7 +15,7 @@ module.exports = class WebTorrentRemoteServer {
     this._webtorrent = null
     this._clients = {}
     this._torrents = []
-    var updateInterval = this._options.updateInterval
+    let updateInterval = this._options.updateInterval
     if (updateInterval === undefined) updateInterval = 1000
     if (updateInterval) setInterval(() => sendUpdates(this), updateInterval)
   }
@@ -32,7 +32,13 @@ module.exports = class WebTorrentRemoteServer {
   // Receives a message from the WebTorrentRemoteClient
   // Message contains {clientKey, type, ...}
   receive (message) {
-    this._clients[message.clientKey] = message.clientKey
+    const {clientKey} = message
+    if (!this._clients[clientKey]) {
+      this._clients[clientKey] = {
+        clientKey,
+        heartbeat: new Date().getTime()
+      }
+    }
     switch (message.type) {
       case 'subscribe':
         return handleSubscribe(this, message)
@@ -43,7 +49,7 @@ module.exports = class WebTorrentRemoteServer {
       case 'heartbeat':
         return handleHeartbeat(this, message)
       default:
-        console.error('Ignoring unknown message type: ' + JSON.stringify(message))
+        console.error('ignoring unknown message type: ' + JSON.stringify(message))
     }
   }
 }
@@ -107,7 +113,7 @@ function handleAddTorrent (server, message) {
   } else {
     // Otherwise, join the swarm
     torrent = wt.add(message.torrentID, message.options)
-    torrent._clients = []
+    torrent.clients = []
     server._torrents.push(torrent)
     addTorrentEvents(server, torrent)
   }
@@ -145,21 +151,21 @@ function handleCreateServer (server, message) {
 function handleHeartbeat (server, message) {
   const client = server._clients[message.clientKey]
   if (!client) return console.error('skipping heartbeat for unknown clientKey ' + message.clientKey)
-  client._heartbeatTimestamp = new Date().getTime()
+  client.heartbeat = new Date().getTime()
 }
 
 function addClient (torrent, clientKey, torrentKey) {
   // Subscribe this client to future updates for this swarm
-  torrent._clients.push({clientKey, torrentKey})
+  torrent.clients.push({clientKey, torrentKey})
 }
 
 function sendInfo (server, torrent, type) {
-  var message = getInfoMessage(server, torrent, type)
+  const message = getInfoMessage(server, torrent, type)
   sendToTorrentClients(server, torrent, message)
 }
 
 function sendProgress (server, torrent, type) {
-  var message = getProgressMessage(server, torrent, type)
+  const message = getProgressMessage(server, torrent, type)
   sendToTorrentClients(server, torrent, message)
 }
 
@@ -198,7 +204,7 @@ function getProgressMessage (server, torrent, type) {
 }
 
 function sendError (server, torrent, e, type) {
-  var message = {
+  const message = {
     type: type, // 'warning' or 'error'
     error: {message: e.message, stack: e.stack}
   }
@@ -216,41 +222,50 @@ function sendUpdates (server) {
 
 function removeDeadClients (server, heartbeatTimeout) {
   const now = new Date().getTime()
-  const isDead = (client) => now - client._heartbeatTimestamp > heartbeatTimeout
-  const deadClients = server._clients.reduce(isDead)
-  if (deadClients.length === 0) return
+  const isDead = (client) => now - client.heartbeat > heartbeatTimeout
+  const deadClientKeys = {}
+  for (const clientKey in server._clients) {
+    const client = server._clients[clientKey]
+    if (!isDead(client)) continue
+    console.log('torrent client died, clientKey: ' + clientKey)
+    deadClientKeys[clientKey] = true
+    delete server._clients[clientKey]
+  }
+  if (Object.keys(deadClientKeys).length === 0) return
 
-  // Remove from torrents
-  var deadClientKeys = {}
-  deadClients.forEach((c) => {
-    console.log('torrent client died, clientKey: ' + c.clientKey)
-    deadClientKeys[c.clientKey] = c
-  })
+  // Remove listeners from torrents
+  // If a torrent has no listeners left, kill the torrent
   server._torrents.forEach((torrent) => {
-    torrent._clients = torrent._clients.filter((c) => !deadClientKeys[c.clientKey])
-    if (torrent._clients.length === 0) {
-      torrent.destroy()
-      console.log('torrent destoyed, all clients died: ' + torrent.name + ' / ' + torrent.key)
-    }
+    torrent.clients = torrent.clients.filter((c) => !deadClientKeys[c.clientKey])
+    if (torrent.clients.length > 0) return
+    torrent.destroy()
+    console.log('torrent destoyed, all clients died: ' + torrent.name + ' / ' + torrent.key)
   })
+
+  // Remove torrents. If the last torrent is gone, kill the client
+  server._torrents = server._torrents.filter((t) => !t.destroyed)
+  if (server._torrents.length > 0 || !server._webtorrent) return
+  server._webtorrent.destroy()
+  server._webtorrent = null
+  console.log('torrent instance destroyed, all torrents gone')
 }
 
 function sendToTorrentClients (server, torrent, message) {
-  torrent._clients.forEach(function (client) {
-    var clientMessage = Object.assign({}, message, client)
+  torrent.clients.forEach(function (client) {
+    const clientMessage = Object.assign({}, message, client)
     server._send(clientMessage)
   })
 }
 
 function sendToAllClients (server, message) {
-  for (var clientKey in server._clients) {
-    var clientMessage = Object.assign({}, message, {clientKey})
+  for (const clientKey in server._clients) {
+    const clientMessage = Object.assign({}, message, {clientKey})
     server._send(clientMessage)
   }
 }
 
 function getTorrentByKey (server, torrentKey) {
-  var torrent = server.webtorrent().torrents.find((t) => hasTorrentKey(t, torrentKey))
+  const torrent = server.webtorrent().torrents.find((t) => hasTorrentKey(t, torrentKey))
   if (!torrent) throw new Error('Missing torrentKey: ' + torrentKey)
   return torrent
 }
@@ -260,5 +275,5 @@ function getTorrentByKey (server, torrentKey) {
 // both added a torrent with the same infohash. (In that case, two RemoteTorrent objects correspond
 // to the same WebTorrent torrent object.)
 function hasTorrentKey (torrent, torrentKey) {
-  return torrent._clients.some((c) => c.torrentKey === torrentKey)
+  return torrent.clients.some((c) => c.torrentKey === torrentKey)
 }
