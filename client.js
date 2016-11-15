@@ -20,9 +20,11 @@ module.exports = class WebTorrentRemoteClient extends EventEmitter {
   // Receives a message from the WebTorrentRemoteServer
   receive (message) {
     if (message.clientKey !== this.clientKey) {
-      throw new Error('Wrong clientKey, expected ' + this.clientKey + ': ' + JSON.stringify(message))
+      console.error('ignoring message, expected clientKey ' + this.clientKey +
+        ': ' + JSON.stringify(message))
     }
     switch (message.type) {
+      // Public events. These are part of the WebTorrent API
       case 'infohash':
         return handleInfo(this, message)
       case 'metadata':
@@ -35,15 +37,35 @@ module.exports = class WebTorrentRemoteClient extends EventEmitter {
         return handleInfo(this, message)
       case 'done':
         return handleInfo(this, message)
-      case 'server-ready':
-        return handleServerReady(this, message)
       case 'error':
         return handleError(this, message)
       case 'warning':
         return handleError(this, message)
+
+      // Internal events. Used to trigger callbacks, not part of the public event API
+      case 'server-ready':
+        return handleServerReady(this, message)
+      case 'torrent-subscribed':
+        return handleSubscribed(this, message)
       default:
         console.error('Ignoring unknown message type: ' + JSON.stringify(message))
     }
+  }
+
+  // Gets an existing torrent. Returns a torrent handle.
+  // Emits either the `torrent-present` or `torrent-absent` event on that handle.
+  get (torrentID, callback) {
+    const torrentKey = generateUniqueKey()
+    this._send({
+      type: 'subscribe',
+      clientKey: this.clientKey,
+      torrentKey,
+      torrentID
+    })
+
+    var torrent = new RemoteTorrent(this, torrentKey)
+    torrent._subscribedCallback = callback
+    this.torrents[torrentKey] = torrent
   }
 
   // Adds a new torrent. See [client.add](https://webtorrent.io/docs)
@@ -52,10 +74,11 @@ module.exports = class WebTorrentRemoteClient extends EventEmitter {
   // All parameters should be JSON serializable.
   // Returns a torrent handle.
   add (torrentID, options) {
-    const torrentKey = generateUniqueKey()
+    options = options || {}
+    const torrentKey = options.torrentKey || generateUniqueKey()
     this._send({
-      clientKey: this.clientKey,
       type: 'add-torrent',
+      clientKey: this.clientKey,
       torrentKey: torrentKey,
       torrentID: torrentID,
       options: options
@@ -102,8 +125,8 @@ class RemoteTorrent extends EventEmitter {
   // All parameters should be JSON serializable.
   createServer (options) {
     this.client._send({
-      clientKey: this.client.clientKey,
       type: 'create-server',
+      clientKey: this.client.clientKey,
       torrentKey: this.key,
       options: options
     })
@@ -115,11 +138,6 @@ function handleInfo (client, message) {
   Object.assign(torrent, message.torrent)
 }
 
-function handleServerReady (client, message) {
-  const torrent = getTorrentByKey(client, message.torrentKey)
-  torrent.serverURL = message.serverURL
-}
-
 function handleError (client, message) {
   var type = message.type // 'error' or 'warning'
   if (message.torrentKey) {
@@ -127,6 +145,22 @@ function handleError (client, message) {
     torrent.emit(type, message.error)
   } else {
     client.emit(type, message.error)
+  }
+}
+
+function handleServerReady (client, message) {
+  const torrent = getTorrentByKey(client, message.torrentKey)
+  torrent.serverURL = message.serverURL
+}
+
+function handleSubscribed (client, message) {
+  const torrent = getTorrentByKey(client, message.torrentKey)
+  var cb = torrent._subscribedCallback
+  if (message.torrent) {
+    Object.assign(torrent, message.torrent) // Fill in infohash, etc
+    cb(null, torrent)
+  } else {
+    cb(new Error('TorrentID not found: ' + message.torrentID))
   }
 }
 

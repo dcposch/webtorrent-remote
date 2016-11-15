@@ -34,6 +34,8 @@ module.exports = class WebTorrentRemoteServer {
   receive (message) {
     this._clients[message.clientKey] = message.clientKey
     switch (message.type) {
+      case 'subscribe':
+        return handleSubscribe(this, message)
       case 'add-torrent':
         return handleAddTorrent(this, message)
       case 'create-server':
@@ -61,6 +63,30 @@ function addTorrentEvents (server, torrent) {
   torrent.on('error', (e) => sendError(server, torrent, e, 'error'))
 }
 
+// Subscribe does NOT create a new torrent or join a new swarm
+// If message.torrentID is missing, it emits 'torrent-subscribed' with {torrent: null}
+// If the webtorrent instance hasn't been created at all yet, subscribe won't create it
+function handleSubscribe (server, message) {
+  const wt = server._webtorrent // Don't create the webtorrent instance
+  const {clientKey, torrentKey} = message
+  const response = {
+    type: 'torrent-subscribed',
+    torrent: null,
+    clientKey,
+    torrentKey
+  }
+
+  // See if we've already joined this swarm
+  const infohash = parseTorrent(message.torrentID).infoHash
+  let torrent = wt && wt.torrents.find((t) => t.infoHash === infohash)
+  if (torrent) {
+    Object.assign(response, getInfoMessage(server, torrent, response.type))
+    addClient(torrent, clientKey, torrentKey)
+  }
+
+  server._send(response)
+}
+
 function handleAddTorrent (server, message) {
   const wt = server.webtorrent()
   const {clientKey, torrentKey} = message
@@ -85,7 +111,7 @@ function handleAddTorrent (server, message) {
   }
 
   // Either way, subscribe this client to future updates for this swarm
-  torrent._clients.push({clientKey, torrentKey})
+  addClient(torrent, clientKey, torrentKey)
 }
 
 function handleCreateServer (server, message) {
@@ -114,6 +140,11 @@ function handleCreateServer (server, message) {
   }
 }
 
+function addClient (torrent, clientKey, torrentKey) {
+  // Subscribe this client to future updates for this swarm
+  torrent._clients.push({clientKey, torrentKey})
+}
+
 function sendInfo (server, torrent, type) {
   var message = getInfoMessage(server, torrent, type)
   sendToTorrentClients(server, torrent, message)
@@ -132,6 +163,7 @@ function getInfoMessage (server, torrent, type) {
       name: torrent.name,
       infohash: torrent.infoHash,
       length: torrent.length,
+      serverURL: torrent.serverURL,
       files: (torrent.files || []).map((file) => ({
         name: file.name,
         length: file.length
