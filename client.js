@@ -10,11 +10,13 @@ const crypto = require('crypto')
 module.exports = class WebTorrentRemoteClient extends EventEmitter {
   // Creates the client and introduces it to the server.
   // - send should be a function (message) {...} that passes the message to WebTorrentRemoteServer
-  constructor (send) {
+  constructor (send, options) {
     super()
     this.clientKey = generateUniqueKey()
     this.torrents = {}
     this._send = send
+    this._options = options = options || {}
+    if (options.heartbeat > 0) setInterval(() => sendHeartbeat(this), options.heartbeat)
   }
 
   // Receives a message from the WebTorrentRemoteServer
@@ -131,6 +133,13 @@ class RemoteTorrent extends EventEmitter {
       options: options
     })
   }
+}
+
+function sendHeartbeat (client) {
+  client._send({
+    type: 'heartbeat',
+    clientKey: client.clientKey
+  })
 }
 
 function handleInfo (client, message) {

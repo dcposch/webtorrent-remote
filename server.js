@@ -40,6 +40,8 @@ module.exports = class WebTorrentRemoteServer {
         return handleAddTorrent(this, message)
       case 'create-server':
         return handleCreateServer(this, message)
+      case 'heartbeat':
+        return handleHeartbeat(this, message)
       default:
         console.error('Ignoring unknown message type: ' + JSON.stringify(message))
     }
@@ -140,6 +142,12 @@ function handleCreateServer (server, message) {
   }
 }
 
+function handleHeartbeat (server, message) {
+  const client = server._clients[message.clientKey]
+  if (!client) return console.error('skipping heartbeat for unknown clientKey ' + message.clientKey)
+  client._heartbeatTimestamp = new Date().getTime()
+}
+
 function addClient (torrent, clientKey, torrentKey) {
   // Subscribe this client to future updates for this swarm
   torrent._clients.push({clientKey, torrentKey})
@@ -199,8 +207,31 @@ function sendError (server, torrent, e, type) {
 }
 
 function sendUpdates (server) {
+  const heartbeatTimeout = server._options.heartbeatTimeout
+  if (heartbeatTimeout > 0) removeDeadClients(server, heartbeatTimeout)
   server._torrents.forEach(function (torrent) {
     sendProgress(server, torrent, 'update')
+  })
+}
+
+function removeDeadClients (server, heartbeatTimeout) {
+  const now = new Date().getTime()
+  const isDead = (client) => now - client._heartbeatTimestamp > heartbeatTimeout
+  const deadClients = server._clients.reduce(isDead)
+  if (deadClients.length === 0) return
+
+  // Remove from torrents
+  var deadClientKeys = {}
+  deadClients.forEach((c) => {
+    console.log('torrent client died, clientKey: ' + c.clientKey)
+    deadClientKeys[c.clientKey] = c
+  })
+  server._torrents.forEach((torrent) => {
+    torrent._clients = torrent._clients.filter((c) => !deadClientKeys[c.clientKey])
+    if (torrent._clients.length === 0) {
+      torrent.destroy()
+      console.log('torrent destoyed, all clients died: ' + torrent.name + ' / ' + torrent.key)
+    }
   })
 }
 
