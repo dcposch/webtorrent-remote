@@ -67,10 +67,7 @@ module.exports = class WebTorrentRemoteClient extends EventEmitter {
       torrentKey,
       torrentID
     })
-
-    var torrent = new RemoteTorrent(this, torrentKey)
-    torrent._subscribedCallback = callback
-    this.torrents[torrentKey] = torrent
+    subscribeTorrentKey(this, torrentKey, callback)
   }
 
   // Adds a new torrent. See [client.add](https://webtorrent.io/docs)
@@ -78,19 +75,17 @@ module.exports = class WebTorrentRemoteClient extends EventEmitter {
   // - options can contain {announce, path, ...}
   // All parameters should be JSON serializable.
   // Returns a torrent handle.
-  add (torrentID, options) {
+  add (torrentID, callback, options) {
     options = options || {}
     const torrentKey = options.torrentKey || generateUniqueKey()
     this._send({
       type: 'add-torrent',
       clientKey: this.clientKey,
-      torrentKey: torrentKey,
-      torrentID: torrentID,
-      options: options
+      torrentKey,
+      torrentID,
+      options
     })
-    var torrent = new RemoteTorrent(this, torrentKey)
-    this.torrents[torrentKey] = torrent
-    return torrent
+    subscribeTorrentKey(this, torrentKey, callback)
   }
 }
 
@@ -128,7 +123,8 @@ class RemoteTorrent extends EventEmitter {
   // Creates a streaming torrent-to-HTTP server
   // - options can contain {headers, ...}
   // All parameters should be JSON serializable.
-  createServer (options) {
+  createServer (options, callback) {
+    this._serverReadyCallback = callback
     this.client._send({
       type: 'create-server',
       clientKey: this.client.clientKey,
@@ -136,6 +132,12 @@ class RemoteTorrent extends EventEmitter {
       options: options
     })
   }
+}
+
+function subscribeTorrentKey (client, torrentKey, callback) {
+  var torrent = new RemoteTorrent(client, torrentKey)
+  torrent._subscribedCallback = callback
+  client.torrents[torrentKey] = torrent
 }
 
 function sendHeartbeat (client) {
@@ -146,8 +148,9 @@ function sendHeartbeat (client) {
 }
 
 function handleInfo (client, message) {
-  var torrent = client.torrents[message.torrentKey]
+  var torrent = getTorrentByKey(client, message.torrentKey)
   Object.assign(torrent, message.torrent)
+  torrent.emit(message.type)
 }
 
 function handleError (client, message) {
@@ -163,6 +166,8 @@ function handleError (client, message) {
 function handleServerReady (client, message) {
   const torrent = getTorrentByKey(client, message.torrentKey)
   torrent.serverURL = message.serverURL
+  const cb = torrent._serverReadyCallback
+  if (cb) cb(null, torrent)
 }
 
 function handleSubscribed (client, message) {
@@ -172,7 +177,10 @@ function handleSubscribed (client, message) {
     Object.assign(torrent, message.torrent) // Fill in infohash, etc
     cb(null, torrent)
   } else {
-    cb(new Error('TorrentID not found: ' + message.torrentID))
+    const err = new Error('TorrentID not found: ' + message.torrentID)
+    err.name = 'TorrentMissingError'
+    delete client.torrents[message.torrentKey]
+    cb(err)
   }
 }
 

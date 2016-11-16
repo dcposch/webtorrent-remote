@@ -3,6 +3,7 @@
 Run WebTorrent in one process, control it from another process or even another machine.
 
 ## server process
+
 ```js
 var WebTorrentRemoteServer = require('webtorrent-remote/server')
 
@@ -20,6 +21,7 @@ server.receive(message)
 ```
 
 ### server options
+
 - `trace`: enable log output. default false. useful for debugging and for visibility.
 
   example log output:
@@ -47,8 +49,8 @@ server.receive(message)
 - all WebTorrent options. the options object is passed to the constructor for the underlying
   WebTorrent instance.
 
-client process(es)
----
+## client process(es)
+
 ```js
 var WebTorrentRemoteClient = require('webtorrent-remote/client')
 
@@ -81,5 +83,64 @@ torrent.on('server-ready', function () {
 ```
 
 ### client options
+
 - `heartbeat`: send a heartbeat once every x milliseconds. default 5000 (5 seconds). set to 0 to
   disable heartbeats.
+
+### client methods
+
+- `add (torrentID, callback, options)`: like `WebTorrent.add`, but async. has an additional option,
+  `server`, which can be set to an object to immediately call `createServer()` on the underlying
+  torrent, passing that object as options. calls back with `(err, torrent)`.
+
+- `get (torrentID, callback)`: like `WebTorrent.get`, but async.  calls back with `(err, torrent)`.
+  if the torrentID is not yet in the client, `err.name` will be `'TorrentMissingError'`.
+
+
+### torrent object
+
+the client gives you a torrent object in the callback to `get` or `add`. this supports a subset of
+the WebTorrent API, forwarding commands to the WebTorrentRemoteServer and emitting events:
+
+#### methods
+
+- `createServer(options, callback)`: calls back with `(err, torrent)`. if there's no error, the
+  torrent will contain `serverURL` pointing to a local torrent-to-HTTP streaming server.
+
+#### new events, not in webtorrent
+
+- `on('update', () => {...})`: fires periodically, see `updateInterval`
+
+#### webtorrent events
+
+- `on('infohash', () => {...})`
+- `on('metadata', () => {...})`
+- `on('download', () => {...})`
+- `on('upload', () => {...})`
+- `on('done', () => {...})`
+- `on('error', () => {...})`
+- `on('warning', () => {...})`
+
+#### new props unique to webtorrent-remote, not in webtorrent
+
+- `client`: the WebTorrentRemoteClient
+- `key`: the clientKey used for messaging
+- `serverURL`: the base URL for the local HTTP server if running, or null. eg http://localhost:9876
+
+#### webtorrent props, updated once on `infohash` or `metadata`
+
+- this.infoHash = null
+- this.name = null
+- this.length = null
+- this.files = []
+
+#### webtorrent props, updated on every `progress` event
+
+- progress
+- downloaded
+- uploaded
+- downloadSpeed
+- uploadSpeed
+- numPeers
+- progress
+- timeRemaining

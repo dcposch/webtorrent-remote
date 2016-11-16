@@ -90,8 +90,10 @@ function handleSubscribe (server, message) {
   const infohash = parseTorrent(message.torrentID).infoHash
   let torrent = wt && wt.torrents.find((t) => t.infoHash === infohash)
   if (torrent) {
-    Object.assign(response, getInfoMessage(server, torrent, response.type))
     addClient(torrent, clientKey, torrentKey)
+    const infoMessage = getInfoMessage(server, torrent, '')
+    const progressMessage = getProgressMessage(server, torrent, '')
+    response.torrent = Object.assign(infoMessage.torrent, progressMessage.torrent)
   }
 
   server._send(response)
@@ -129,6 +131,7 @@ function handleAddTorrent (server, message) {
 function handleCreateServer (server, message) {
   const {clientKey, torrentKey} = message
   const torrent = getTorrentByKey(server, torrentKey)
+  if (!torrent) return
   let {serverURL} = torrent
   if (serverURL) {
     // Server already exists. Notify the caller right away
@@ -271,7 +274,10 @@ function sendToAllClients (server, message) {
 
 function getTorrentByKey (server, torrentKey) {
   const torrent = server.webtorrent().torrents.find((t) => hasTorrentKey(t, torrentKey))
-  if (!torrent) throw new Error('Missing torrentKey: ' + torrentKey)
+  if (!torrent) {
+    const message = 'missing torrentKey: ' + torrentKey
+    sendError(server, null, {message}, 'warning')
+  }
   return torrent
 }
 
