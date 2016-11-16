@@ -11,7 +11,7 @@ var server = new WebTorrentRemoteServer(send, options)
 
 function send (message) {
   // Send `message` to the correct client. It's JSON serializable.
-  // Use TCP, some kind of ICP, whatever.
+  // Use TCP, some kind of IPC, whatever.
   // If there are multiple clients, look at message.clientID
 }
 
@@ -22,9 +22,17 @@ server.receive(message)
 ### server options
 - `trace`: enable log output. default false. useful for debugging and for visibility.
 
-  Example log output:
+  example log output:
 
   ```
+  adding  client, clientKey: e63820e1409b7ccd53106aa164d18e74
+  joining swarm: a88fda5954e89178c372716a6a78b8180ed4dad3 The WIRED CD - Rip. Sample. Mash. Share
+  adding  client, clientKey: 0b634c3fb8f64a88906fa6f4b24c7af0
+  joining swarm: 6a9759bffd5c0af65319979fb7832189f4f3c35d sintel.mp4
+  adding  client, clientKey: 129e327bb95520546b7b93b1cdf5c07e
+  joining swarm: 02767050e0be2fd4db9a2ad6c12416ac806ed6ed tears_of_steel_1080p.webm
+  torrent client died, clientKey: 0b634c3fb8f64a88906fa6f4b24c7af0
+  torrent destroyed, all clients died: sintel.mp4
   ```
 
 - `heartbeatTimeout`: remove clients if we don't hear a heartbeat for this many milliseconds.
