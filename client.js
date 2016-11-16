@@ -157,7 +157,8 @@ function handleError (client, message) {
   var type = message.type // 'error' or 'warning'
   if (message.torrentKey) {
     var torrent = getTorrentByKey(client, message.torrentKey)
-    torrent.emit(type, message.error)
+    if (torrent.listeners(type).length > 0) torrent.emit(type, message.error)
+    else client.emit(type, message.error)
   } else {
     client.emit(type, message.error)
   }

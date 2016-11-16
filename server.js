@@ -78,7 +78,21 @@ function addTorrentEvents (server, torrent) {
 // If the webtorrent instance hasn't been created at all yet, subscribe won't create it
 function handleSubscribe (server, message) {
   const wt = server._webtorrent // Don't create the webtorrent instance
+
+  // See if we've already joined this swarm
+  const infohash = parseTorrent(message.torrentID).infoHash
+  let torrent = wt && wt.torrents.find((t) => t.infoHash === infohash)
+
+  // If so, listen for updates
+  if (torrent) torrent.clients.push({clientKey, torrentKey})
+
+  // Either way, respond
   const {clientKey, torrentKey} = message
+  sendSubscribed(server, torrent, clientKey, torrentKey)
+}
+
+// Emits the 'torrent-subscribed' event
+function sendSubscribed (server, torrent, clientKey, torrentKey) {
   const response = {
     type: 'torrent-subscribed',
     torrent: null,
@@ -86,11 +100,7 @@ function handleSubscribe (server, message) {
     torrentKey
   }
 
-  // See if we've already joined this swarm
-  const infohash = parseTorrent(message.torrentID).infoHash
-  let torrent = wt && wt.torrents.find((t) => t.infoHash === infohash)
   if (torrent) {
-    addClient(torrent, clientKey, torrentKey)
     const infoMessage = getInfoMessage(server, torrent, '')
     const progressMessage = getProgressMessage(server, torrent, '')
     response.torrent = Object.assign(infoMessage.torrent, progressMessage.torrent)
@@ -101,22 +111,14 @@ function handleSubscribe (server, message) {
 
 function handleAddTorrent (server, message) {
   const wt = server.webtorrent()
-  const {clientKey, torrentKey} = message
 
   // First, see if we've already joined this swarm
   const parsed = parseTorrent(message.torrentID)
   const infohash = parsed.infoHash
   let torrent = wt.torrents.find((t) => t.infoHash === infohash)
 
-  if (torrent) {
-    // If so, send the `infohash` and `metadata` events and a progress update right away
-    const keys = {clientKey, torrentKey}
-    server._send(Object.assign(getInfoMessage(server, torrent, 'infohash'), keys))
-    server._send(Object.assign(getInfoMessage(server, torrent, 'metadata'), keys))
-    const progressType = torrent.downloaded === torrent.length ? 'done' : 'update'
-    server._send(Object.assign(getProgressMessage(server, torrent, progressType), keys))
-  } else {
-    // Otherwise, join the swarm
+  // If not, join the swarm
+  if (!torrent) {
     if (server._options.trace) console.log('joining swarm: ' + infohash + ' ' + (parsed.name || ''))
     torrent = wt.add(message.torrentID, message.options)
     torrent.clients = []
@@ -125,32 +127,44 @@ function handleAddTorrent (server, message) {
   }
 
   // Either way, subscribe this client to future updates for this swarm
-  addClient(torrent, clientKey, torrentKey)
+  const {clientKey, torrentKey} = message
+  torrent.clients.push({clientKey, torrentKey})
+
+  // If we want a server, create a server and wait for it to start listening
+  const respond = () => sendSubscribed(server, torrent, clientKey, torrentKey)
+  if (message.options.server) createServer(torrent, message.server, respond)
+  else respond()
 }
 
 function handleCreateServer (server, message) {
   const {clientKey, torrentKey} = message
   const torrent = getTorrentByKey(server, torrentKey)
   if (!torrent) return
-  let {serverURL} = torrent
-  if (serverURL) {
-    // Server already exists. Notify the caller right away
+  createServer(torrent, message.options, function () {
+    const {serverURL} = torrent
     server._send({clientKey, torrentKey, serverURL, type: 'server-ready'})
-  } else if (torrent.pendingHttpClients) {
+  })
+}
+
+function createServer (torrent, options, callback) {
+  if (torrent.serverURL) {
+    // Server already exists. Call back right away
+    callback()
+  } else if (torrent.pendingServerCallbacks) {
     // Server pending
     // listen() has already been called, but the 'listening' event hasn't fired yet
-    torrent.pendingHttpClients.push({clientKey, torrentKey})
+    torrent.pendingServerCallbacks.push(callback)
   } else {
     // Server does not yet exist. Create it, then notify everyone who asked for it
-    torrent.pendingHttpClients = [{clientKey, torrentKey}]
-    torrent.server = torrent.createServer(message.options)
+    torrent.pendingServerCallbacks = [callback]
+    console.log('DBG SERVER')
+    torrent.server = torrent.createServer(options)
     torrent.server.listen(function () {
+      console.log('DBG DONE')
       const addr = torrent.server.address()
-      serverURL = torrent.serverURL = 'http://localhost:' + addr.port
-      torrent.pendingHttpClients.forEach(function ({clientKey, torrentKey}) {
-        server._send({clientKey, torrentKey, serverURL, type: 'server-ready'})
-      })
-      delete torrent.pendingHttpClients
+      torrent.serverURL = 'http://localhost:' + addr.port
+      torrent.pendingServerCallbacks.forEach(cb => cb())
+      delete torrent.pendingServerCallbacks
     })
   }
 }
@@ -159,11 +173,6 @@ function handleHeartbeat (server, message) {
   const client = server._clients[message.clientKey]
   if (!client) return console.error('skipping heartbeat for unknown clientKey ' + message.clientKey)
   client.heartbeat = new Date().getTime()
-}
-
-function addClient (torrent, clientKey, torrentKey) {
-  // Subscribe this client to future updates for this swarm
-  torrent.clients.push({clientKey, torrentKey})
 }
 
 function sendInfo (server, torrent, type) {
