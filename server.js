@@ -78,16 +78,16 @@ function addTorrentEvents (server, torrent) {
 // If the webtorrent instance hasn't been created at all yet, subscribe won't create it
 function handleSubscribe (server, message) {
   const wt = server._webtorrent // Don't create the webtorrent instance
+  const {clientKey, torrentKey, torrentID} = message
 
   // See if we've already joined this swarm
-  const infohash = parseTorrent(message.torrentID).infoHash
+  const infohash = parseTorrent(torrentID).infoHash
   let torrent = wt && wt.torrents.find((t) => t.infoHash === infohash)
 
   // If so, listen for updates
   if (torrent) torrent.clients.push({clientKey, torrentKey})
 
   // Either way, respond
-  const {clientKey, torrentKey} = message
   sendSubscribed(server, torrent, clientKey, torrentKey)
 }
 
@@ -157,10 +157,8 @@ function createServer (torrent, options, callback) {
   } else {
     // Server does not yet exist. Create it, then notify everyone who asked for it
     torrent.pendingServerCallbacks = [callback]
-    console.log('DBG SERVER')
     torrent.server = torrent.createServer(options)
     torrent.server.listen(function () {
-      console.log('DBG DONE')
       const addr = torrent.server.address()
       torrent.serverURL = 'http://localhost:' + addr.port
       torrent.pendingServerCallbacks.forEach(cb => cb())
