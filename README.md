@@ -96,6 +96,11 @@ torrent.on('server-ready', function () {
 - `get (torrentID, callback)`: like `WebTorrent.get`, but async.  calls back with `(err, torrent)`.
   if the torrentID is not yet in the client, `err.name` will be `'TorrentMissingError'`.
 
+- `destroy (options)`: like `WebTorrent.destroy`, but destroys only this client. if a given torrent
+  has no clients left, it will be destroyed too. if all torrents are gone, the whole WebTorrent
+  object will be destroyed on the server side. optionally takes {delay: <milliseconds>} to wait
+  before destroying the client, to avoid destroying and immediately recreating a torrent if you're
+  about to replace this client with another for the same infohash.
 
 ### torrent object
 

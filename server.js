@@ -50,6 +50,8 @@ module.exports = class WebTorrentRemoteServer {
         return handleCreateServer(this, message)
       case 'heartbeat':
         return handleHeartbeat(this, message)
+      case 'destroy':
+        return handleDestroy(this, message)
       default:
         console.error('ignoring unknown message type: ' + JSON.stringify(message))
     }
@@ -173,6 +175,16 @@ function handleHeartbeat (server, message) {
   client.heartbeat = new Date().getTime()
 }
 
+// Removes a client from all torrents
+// If the torrent has no clients left, destroys the torrent
+function handleDestroy (server, message) {
+  const {clientKey, options} = message
+  if (server._options.trace) console.log('destroying client ' + clientKey)
+  const kill = () => killClients(server, [clientKey])
+  if (options && options.delay) setTimeout(kill, options.delay)
+  else kill()
+}
+
 function sendInfo (server, torrent, type) {
   const message = getInfoMessage(server, torrent, type)
   sendToTorrentClients(server, torrent, message)
@@ -236,20 +248,29 @@ function sendUpdates (server) {
 
 function removeDeadClients (server, heartbeatTimeout) {
   const now = new Date().getTime()
-  const isDead = (client) => now - client.heartbeat > heartbeatTimeout
-  const deadClientKeys = {}
-  const trace = server._options.trace
+  const clientKeys = []
   for (const clientKey in server._clients) {
     const client = server._clients[clientKey]
-    if (!isDead(client)) continue
-    if (trace) console.log('torrent client died, clientKey: ' + clientKey)
-    deadClientKeys[clientKey] = true
-    delete server._clients[clientKey]
+    if (now - client.heartbeat <= heartbeatTimeout) continue
+    if (server._options.trace) console.log('torrent client died, clientKey: ' + clientKey)
+    clientKeys.push(clientKey)
   }
-  if (Object.keys(deadClientKeys).length === 0) return
+  killClients(server, clientKeys)
+}
 
-  // Remove listeners from torrents
-  // If a torrent has no listeners left, kill the torrent
+function killClients (server, clientKeys) {
+  if (!clientKeys || clientKeys.length === 0) return
+  const {trace} = server._options
+
+  // Remove clients
+  const deadClientKeys = {}
+  clientKeys.forEach(function (clientKey) {
+    delete server._clients[clientKey]
+    deadClientKeys[clientKey] = true
+  })
+
+  // Remove clients from torrents
+  // If a torrent has no clients left, kill the torrent
   server._torrents.forEach((torrent) => {
     torrent.clients = torrent.clients.filter((c) => !deadClientKeys[c.clientKey])
     if (torrent.clients.length > 0) return
@@ -257,7 +278,7 @@ function removeDeadClients (server, heartbeatTimeout) {
     if (trace) console.log('torrent destroyed, all clients died: ' + torrent.name)
   })
 
-  // Remove torrents. If the last torrent is gone, kill the client
+  // Remove torrents. If the last torrent is gone, kill the whole WebTorrent instance
   server._torrents = server._torrents.filter((t) => !t.destroyed)
   if (server._torrents.length > 0 || !server._webtorrent) return
   server._webtorrent.destroy()

@@ -16,6 +16,7 @@ module.exports = class WebTorrentRemoteClient extends EventEmitter {
     this.torrents = {}
     this._send = send
     this._options = options || {}
+    this._destroyed = false
 
     let heartbeat = this._options.heartbeat
     if (heartbeat == null) heartbeat = 5000
@@ -27,6 +28,9 @@ module.exports = class WebTorrentRemoteClient extends EventEmitter {
     if (message.clientKey !== this.clientKey) {
       return console.error('ignoring message, expected clientKey ' + this.clientKey +
         ': ' + JSON.stringify(message))
+    }
+    if (this._destroyed) {
+      return console.error('ignoring message, client is destroyed: ' + this.clientKey)
     }
     switch (message.type) {
       // Public events. These are part of the WebTorrent API
@@ -86,6 +90,17 @@ module.exports = class WebTorrentRemoteClient extends EventEmitter {
       options
     })
     subscribeTorrentKey(this, torrentKey, callback)
+  }
+
+  // Destroys the client
+  // If this was the last client for a given torrent, destroys that torrent too
+  destroy (options) {
+    this._send({
+      type: 'destroy',
+      clientKey: this.clientKey,
+      options
+    })
+    this._destroyed = true
   }
 }
 
