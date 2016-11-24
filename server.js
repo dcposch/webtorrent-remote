@@ -17,7 +17,7 @@ function WebTorrentRemoteServer (send, options) {
   this._clients = {}
   this._torrents = []
 
-  let updateInterval = this._options.updateInterval
+  var updateInterval = this._options.updateInterval
   if (updateInterval === undefined) updateInterval = 1000
   if (updateInterval) setInterval(() => sendUpdates(this), updateInterval)
 }
@@ -84,7 +84,7 @@ function handleSubscribe (server, message) {
 
   // See if we've already joined this swarm
   const infohash = parseTorrent(torrentID).infoHash
-  let torrent = wt && wt.torrents.find((t) => t.infoHash === infohash)
+  var torrent = wt && wt.torrents.find((t) => t.infoHash === infohash)
 
   // If so, listen for updates
   if (torrent) torrent.clients.push({clientKey, torrentKey})
@@ -117,7 +117,7 @@ function handleAddTorrent (server, message) {
   // First, see if we've already joined this swarm
   const parsed = parseTorrent(message.torrentID)
   const infohash = parsed.infoHash
-  let torrent = wt.torrents.find((t) => t.infoHash === infohash)
+  var torrent = wt.torrents.find((t) => t.infoHash === infohash)
 
   // If not, join the swarm
   if (!torrent) {
@@ -238,7 +238,7 @@ function sendError (server, torrent, e, type) {
 }
 
 function sendUpdates (server) {
-  let heartbeatTimeout = server._options.heartbeatTimeout
+  var heartbeatTimeout = server._options.heartbeatTimeout
   if (heartbeatTimeout == null) heartbeatTimeout = 30000
   if (heartbeatTimeout > 0) removeDeadClients(server, heartbeatTimeout)
   server._torrents.forEach(function (torrent) {
