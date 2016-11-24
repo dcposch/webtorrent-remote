@@ -1,6 +1,8 @@
 const WebTorrent = require('webtorrent')
 const parseTorrent = require('parse-torrent')
 
+module.exports = WebTorrentRemoteServer
+
 // Runs WebTorrent.
 // Connects to trackers, the DHT, BitTorrent peers, and WebTorrent peers.
 // Controlled by one or more WebTorrentRemoteClients.
@@ -8,53 +10,51 @@ const parseTorrent = require('parse-torrent')
 //   Must deliver them message to the WebTorrentRemoteClient
 //   If there is more than one client, you must check message.clientKey
 // - options is passed to the WebTorrent constructor
-module.exports = class WebTorrentRemoteServer {
-  constructor (send, options) {
-    this._send = send
-    this._options = options || {}
-    this._webtorrent = null
-    this._clients = {}
-    this._torrents = []
+function WebTorrentRemoteServer (send, options) {
+  this._send = send
+  this._options = options || {}
+  this._webtorrent = null
+  this._clients = {}
+  this._torrents = []
 
-    let updateInterval = this._options.updateInterval
-    if (updateInterval === undefined) updateInterval = 1000
-    if (updateInterval) setInterval(() => sendUpdates(this), updateInterval)
+  let updateInterval = this._options.updateInterval
+  if (updateInterval === undefined) updateInterval = 1000
+  if (updateInterval) setInterval(() => sendUpdates(this), updateInterval)
+}
+
+// Returns the underlying WebTorrent object, lazily creating it if needed
+WebTorrentRemoteServer.prototype.webtorrent = function () {
+  if (!this._webtorrent) {
+    this._webtorrent = new WebTorrent(this._options)
+    addWebTorrentEvents(this)
   }
+  return this._webtorrent
+}
 
-  // Returns the underlying WebTorrent object, lazily creating it if needed
-  webtorrent () {
-    if (!this._webtorrent) {
-      this._webtorrent = new WebTorrent(this._options)
-      addWebTorrentEvents(this)
+// Receives a message from the WebTorrentRemoteClient
+// Message contains {clientKey, type, ...}
+WebTorrentRemoteServer.prototype.receive = function (message) {
+  const {clientKey} = message
+  if (!this._clients[clientKey]) {
+    if (this._options.trace) console.log('adding  client, clientKey: ' + clientKey)
+    this._clients[clientKey] = {
+      clientKey,
+      heartbeat: new Date().getTime()
     }
-    return this._webtorrent
   }
-
-  // Receives a message from the WebTorrentRemoteClient
-  // Message contains {clientKey, type, ...}
-  receive (message) {
-    const {clientKey} = message
-    if (!this._clients[clientKey]) {
-      if (this._options.trace) console.log('adding  client, clientKey: ' + clientKey)
-      this._clients[clientKey] = {
-        clientKey,
-        heartbeat: new Date().getTime()
-      }
-    }
-    switch (message.type) {
-      case 'subscribe':
-        return handleSubscribe(this, message)
-      case 'add-torrent':
-        return handleAddTorrent(this, message)
-      case 'create-server':
-        return handleCreateServer(this, message)
-      case 'heartbeat':
-        return handleHeartbeat(this, message)
-      case 'destroy':
-        return handleDestroy(this, message)
-      default:
-        console.error('ignoring unknown message type: ' + JSON.stringify(message))
-    }
+  switch (message.type) {
+    case 'subscribe':
+      return handleSubscribe(this, message)
+    case 'add-torrent':
+      return handleAddTorrent(this, message)
+    case 'create-server':
+      return handleCreateServer(this, message)
+    case 'heartbeat':
+      return handleHeartbeat(this, message)
+    case 'destroy':
+      return handleDestroy(this, message)
+    default:
+      console.error('ignoring unknown message type: ' + JSON.stringify(message))
   }
 }
 
