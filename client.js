@@ -23,7 +23,7 @@ function WebTorrentRemoteClient (send, options) {
 
   var heartbeat = this._options.heartbeat
   if (heartbeat == null) heartbeat = 5000
-  if (heartbeat > 0) setInterval(() => sendHeartbeat(this), heartbeat)
+  if (heartbeat > 0) setInterval(function () { sendHeartbeat(this) }, heartbeat)
 }
 
 // Receives a message from the WebTorrentRemoteServer
