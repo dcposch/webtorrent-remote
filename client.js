@@ -7,101 +7,103 @@ const crypto = require('crypto')
 // - a subset of the methods and props of the WebTorrent client object
 // - clientKey, the UUID that's included in all IPC messages to and from this client
 // - torrents, a map from torrent key (also a UUID) to torrent handle
-module.exports = class WebTorrentRemoteClient extends EventEmitter {
-  // Creates the client and introduces it to the server.
-  // - send should be a function (message) {...} that passes the message to WebTorrentRemoteServer
-  constructor (send, options) {
-    super()
-    this.clientKey = generateUniqueKey()
-    this.torrents = {}
-    this._send = send
-    this._options = options || {}
-    this._destroyed = false
+//
+// Constructor creates the client and introduces it to the server.
+// - send should be a function (message) {...} that passes the message to WebTorrentRemoteServer
+// - options optionally specifies {heartbeat}, the heartbeat interval in milliseconds
+module.exports = WebTorrentRemoteClient
 
-    let heartbeat = this._options.heartbeat
-    if (heartbeat == null) heartbeat = 5000
-    if (heartbeat > 0) setInterval(() => sendHeartbeat(this), heartbeat)
+function WebTorrentRemoteClient (send, options) {
+  EventEmitter(this)
+  this.clientKey = generateUniqueKey()
+  this.torrents = {}
+  this._send = send
+  this._options = options || {}
+  this._destroyed = false
+
+  let heartbeat = this._options.heartbeat
+  if (heartbeat == null) heartbeat = 5000
+  if (heartbeat > 0) setInterval(() => sendHeartbeat(this), heartbeat)
+}
+
+// Receives a message from the WebTorrentRemoteServer
+WebTorrentRemoteClient.prototype.receive = function (message) {
+  if (message.clientKey !== this.clientKey) {
+    return console.error('ignoring message, expected clientKey ' + this.clientKey +
+      ': ' + JSON.stringify(message))
   }
-
-  // Receives a message from the WebTorrentRemoteServer
-  receive (message) {
-    if (message.clientKey !== this.clientKey) {
-      return console.error('ignoring message, expected clientKey ' + this.clientKey +
-        ': ' + JSON.stringify(message))
-    }
-    if (this._destroyed) {
-      return console.error('ignoring message, client is destroyed: ' + this.clientKey)
-    }
-    switch (message.type) {
-      // Public events. These are part of the WebTorrent API
-      case 'infohash':
-        return handleInfo(this, message)
-      case 'metadata':
-        return handleInfo(this, message)
-      case 'download':
-        return handleInfo(this, message)
-      case 'upload':
-        return handleInfo(this, message)
-      case 'update':
-        return handleInfo(this, message)
-      case 'done':
-        return handleInfo(this, message)
-      case 'error':
-        return handleError(this, message)
-      case 'warning':
-        return handleError(this, message)
-
-      // Internal events. Used to trigger callbacks, not part of the public event API
-      case 'server-ready':
-        return handleServerReady(this, message)
-      case 'torrent-subscribed':
-        return handleSubscribed(this, message)
-      default:
-        console.error('ignoring message, unknown type: ' + JSON.stringify(message))
-    }
+  if (this._destroyed) {
+    return console.error('ignoring message, client is destroyed: ' + this.clientKey)
   }
+  switch (message.type) {
+    // Public events. These are part of the WebTorrent API
+    case 'infohash':
+      return handleInfo(this, message)
+    case 'metadata':
+      return handleInfo(this, message)
+    case 'download':
+      return handleInfo(this, message)
+    case 'upload':
+      return handleInfo(this, message)
+    case 'update':
+      return handleInfo(this, message)
+    case 'done':
+      return handleInfo(this, message)
+    case 'error':
+      return handleError(this, message)
+    case 'warning':
+      return handleError(this, message)
 
-  // Gets an existing torrent. Returns a torrent handle.
-  // Emits either the `torrent-present` or `torrent-absent` event on that handle.
-  get (torrentID, callback) {
-    const torrentKey = generateUniqueKey()
-    this._send({
-      type: 'subscribe',
-      clientKey: this.clientKey,
-      torrentKey,
-      torrentID
-    })
-    subscribeTorrentKey(this, torrentKey, callback)
+    // Internal events. Used to trigger callbacks, not part of the public event API
+    case 'server-ready':
+      return handleServerReady(this, message)
+    case 'torrent-subscribed':
+      return handleSubscribed(this, message)
+    default:
+      console.error('ignoring message, unknown type: ' + JSON.stringify(message))
   }
+}
 
-  // Adds a new torrent. See [client.add](https://webtorrent.io/docs)
-  // - torrentID is a magnet link, etc
-  // - options can contain {announce, path, ...}
-  // All parameters should be JSON serializable.
-  // Returns a torrent handle.
-  add (torrentID, callback, options) {
-    options = options || {}
-    const torrentKey = options.torrentKey || generateUniqueKey()
-    this._send({
-      type: 'add-torrent',
-      clientKey: this.clientKey,
-      torrentKey,
-      torrentID,
-      options
-    })
-    subscribeTorrentKey(this, torrentKey, callback)
-  }
+// Gets an existing torrent. Returns a torrent handle.
+// Emits either the `torrent-present` or `torrent-absent` event on that handle.
+WebTorrentRemoteClient.prototype.get = function (torrentID, callback) {
+  const torrentKey = generateUniqueKey()
+  this._send({
+    type: 'subscribe',
+    clientKey: this.clientKey,
+    torrentKey,
+    torrentID
+  })
+  subscribeTorrentKey(this, torrentKey, callback)
+}
 
-  // Destroys the client
-  // If this was the last client for a given torrent, destroys that torrent too
-  destroy (options) {
-    this._send({
-      type: 'destroy',
-      clientKey: this.clientKey,
-      options
-    })
-    this._destroyed = true
-  }
+// Adds a new torrent. See [client.add](https://webtorrent.io/docs)
+// - torrentID is a magnet link, etc
+// - options can contain {announce, path, ...}
+// All parameters should be JSON serializable.
+// Returns a torrent handle.
+WebTorrentRemoteClient.prototype.add = function (torrentID, callback, options) {
+  options = options || {}
+  const torrentKey = options.torrentKey || generateUniqueKey()
+  this._send({
+    type: 'add-torrent',
+    clientKey: this.clientKey,
+    torrentKey,
+    torrentID,
+    options
+  })
+  subscribeTorrentKey(this, torrentKey, callback)
+}
+
+// Destroys the client
+// If this was the last client for a given torrent, destroys that torrent too
+WebTorrentRemoteClient.prototype.destroy = function (options) {
+  this._send({
+    type: 'destroy',
+    clientKey: this.clientKey,
+    options
+  })
+  this._destroyed = true
 }
 
 // Refers to a WebTorrent torrent object that lives in a different process.
@@ -109,44 +111,42 @@ module.exports = class WebTorrentRemoteClient extends EventEmitter {
 // - the same API (for now, just a subset)
 // - client, the underlying WebTorrentRemoteClient
 // - key, the UUID that uniquely identifies this torrent
-class RemoteTorrent extends EventEmitter {
-  constructor (client, key) {
-    super()
+function RemoteTorrent (client, key) {
+  EventEmitter(this)
 
-    // New props unique to webtorrent-remote, not in webtorrent
-    this.client = client
-    this.key = key
-    this.serverURL = null
+  // New props unique to webtorrent-remote, not in webtorrent
+  this.client = client
+  this.key = key
+  this.serverURL = null
 
-    // WebTorrent API, props updated once:
-    this.infoHash = null
-    this.name = null
-    this.length = null
-    this.files = []
+  // WebTorrent API, props updated once:
+  this.infoHash = null
+  this.name = null
+  this.length = null
+  this.files = []
 
-    // WebTorrent API, props updated with every `progress` event:
-    this.progress = 0
-    this.downloaded = 0
-    this.uploaded = 0
-    this.downloadSpeed = 0
-    this.uploadSpeed = 0
-    this.numPeers = 0
-    this.progress = 0
-    this.timeRemaining = Infinity
-  }
+  // WebTorrent API, props updated with every `progress` event:
+  this.progress = 0
+  this.downloaded = 0
+  this.uploaded = 0
+  this.downloadSpeed = 0
+  this.uploadSpeed = 0
+  this.numPeers = 0
+  this.progress = 0
+  this.timeRemaining = Infinity
+}
 
-  // Creates a streaming torrent-to-HTTP server
-  // - options can contain {headers, ...}
-  // All parameters should be JSON serializable.
-  createServer (options, callback) {
-    this._serverReadyCallback = callback
-    this.client._send({
-      type: 'create-server',
-      clientKey: this.client.clientKey,
-      torrentKey: this.key,
-      options: options
-    })
-  }
+// Creates a streaming torrent-to-HTTP server
+// - options can contain {headers, ...}
+// All parameters should be JSON serializable.
+RemoteTorrent.prototype.createServer = function (options, callback) {
+  this._serverReadyCallback = callback
+  this.client._send({
+    type: 'create-server',
+    clientKey: this.client.clientKey,
+    torrentKey: this.key,
+    options: options
+  })
 }
 
 function subscribeTorrentKey (client, torrentKey, callback) {
