@@ -14,7 +14,7 @@ var crypto = require('crypto')
 module.exports = WebTorrentRemoteClient
 
 function WebTorrentRemoteClient (send, options) {
-  EventEmitter(this)
+  EventEmitter.call(this)
   this.clientKey = generateUniqueKey()
   this.torrents = {}
   this._send = send
@@ -23,8 +23,10 @@ function WebTorrentRemoteClient (send, options) {
 
   var heartbeat = this._options.heartbeat
   if (heartbeat == null) heartbeat = 5000
-  if (heartbeat > 0) setInterval(function () { sendHeartbeat(this) }, heartbeat)
+  if (heartbeat > 0) setInterval(sendHeartbeat.bind(null, this), heartbeat)
 }
+
+WebTorrentRemoteClient.prototype = Object.create(EventEmitter.prototype)
 
 // Receives a message from the WebTorrentRemoteServer
 WebTorrentRemoteClient.prototype.receive = function (message) {
@@ -112,7 +114,7 @@ WebTorrentRemoteClient.prototype.destroy = function (options) {
 // - client, the underlying WebTorrentRemoteClient
 // - key, the UUID that uniquely identifies this torrent
 function RemoteTorrent (client, key) {
-  EventEmitter(this)
+  EventEmitter.call(this)
 
   // New props unique to webtorrent-remote, not in webtorrent
   this.client = client
@@ -135,6 +137,8 @@ function RemoteTorrent (client, key) {
   this.progress = 0
   this.timeRemaining = Infinity
 }
+
+RemoteTorrent.prototype = Object.create(EventEmitter.prototype)
 
 // Creates a streaming torrent-to-HTTP server
 // - options can contain {headers, ...}

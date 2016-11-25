@@ -19,7 +19,7 @@ function WebTorrentRemoteServer (send, options) {
 
   var updateInterval = this._options.updateInterval
   if (updateInterval === undefined) updateInterval = 1000
-  if (updateInterval) setInterval(function () { sendUpdates(this) }, updateInterval)
+  if (updateInterval) setInterval(sendUpdates.bind(null, this), updateInterval)
 }
 
 // Returns the underlying WebTorrent object, lazily creating it if needed

@@ -1,6 +1,8 @@
 # webtorrent-remote
 
-Run WebTorrent in one process, control it from another process or even another machine.
+run WebTorrent in one process, control it from another process or even another machine.
+
+plain Javascript, no es6
 
 ## server process
 
