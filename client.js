@@ -1,5 +1,5 @@
-const EventEmitter = require('events')
-const crypto = require('crypto')
+var EventEmitter = require('events')
+var crypto = require('crypto')
 
 // Provides the WebTorrent API.
 // Talks to a WebTorrentRemoteServer instance in another process or even another machine.
@@ -67,7 +67,7 @@ WebTorrentRemoteClient.prototype.receive = function (message) {
 // Gets an existing torrent. Returns a torrent handle.
 // Emits either the `torrent-present` or `torrent-absent` event on that handle.
 WebTorrentRemoteClient.prototype.get = function (torrentID, callback) {
-  const torrentKey = generateUniqueKey()
+  var torrentKey = generateUniqueKey()
   this._send({
     type: 'subscribe',
     clientKey: this.clientKey,
@@ -84,7 +84,7 @@ WebTorrentRemoteClient.prototype.get = function (torrentID, callback) {
 // Returns a torrent handle.
 WebTorrentRemoteClient.prototype.add = function (torrentID, callback, options) {
   options = options || {}
-  const torrentKey = options.torrentKey || generateUniqueKey()
+  var torrentKey = options.torrentKey || generateUniqueKey()
   this._send({
     type: 'add-torrent',
     clientKey: this.clientKey,
@@ -180,20 +180,20 @@ function handleError (client, message) {
 }
 
 function handleServerReady (client, message) {
-  const torrent = getTorrentByKey(client, message.torrentKey)
+  var torrent = getTorrentByKey(client, message.torrentKey)
   torrent.serverURL = message.serverURL
-  const cb = torrent._serverReadyCallback
+  var cb = torrent._serverReadyCallback
   if (cb) cb(null, torrent)
 }
 
 function handleSubscribed (client, message) {
-  const torrent = getTorrentByKey(client, message.torrentKey)
+  var torrent = getTorrentByKey(client, message.torrentKey)
   var cb = torrent._subscribedCallback
   if (message.torrent) {
     Object.assign(torrent, message.torrent) // Fill in infohash, etc
     cb(null, torrent)
   } else {
-    const err = new Error('TorrentID not found: ' + message.torrentID)
+    var err = new Error('TorrentID not found: ' + message.torrentID)
     err.name = 'TorrentMissingError'
     delete client.torrents[message.torrentKey]
     cb(err)
@@ -201,7 +201,7 @@ function handleSubscribed (client, message) {
 }
 
 function getTorrentByKey (client, torrentKey) {
-  const torrent = client.torrents[torrentKey]
+  var torrent = client.torrents[torrentKey]
   if (torrent) return torrent
   throw new Error('Unrecognized torrentKey: ' + torrentKey)
 }
