@@ -71,8 +71,8 @@ WebTorrentRemoteClient.prototype.get = function (torrentID, callback) {
   this._send({
     type: 'subscribe',
     clientKey: this.clientKey,
-    torrentKey,
-    torrentID
+    torrentKey: torrentKey,
+    torrentID: torrentID
   })
   subscribeTorrentKey(this, torrentKey, callback)
 }
@@ -88,9 +88,9 @@ WebTorrentRemoteClient.prototype.add = function (torrentID, callback, options) {
   this._send({
     type: 'add-torrent',
     clientKey: this.clientKey,
-    torrentKey,
-    torrentID,
-    options
+    torrentKey: torrentKey,
+    torrentID: torrentID,
+    options: options
   })
   subscribeTorrentKey(this, torrentKey, callback)
 }
@@ -101,7 +101,7 @@ WebTorrentRemoteClient.prototype.destroy = function (options) {
   this._send({
     type: 'destroy',
     clientKey: this.clientKey,
-    options
+    options: options
   })
   this._destroyed = true
 }
