@@ -19,6 +19,6 @@
     "standard": "^8.5.0"
   },
   "dependencies": {
-    "webtorrent": "^0.97.2"
+    "webtorrent": "0.x"
   }
 }
