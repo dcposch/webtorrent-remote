@@ -1,6 +1,6 @@
 {
   "name": "webtorrent-remote",
-  "version": "0.0.10",
+  "version": "1.0.0",
   "description": "Run WebTorrent in one process, control it from another process or even another machine",
   "scripts": {
     "test": "standard"
