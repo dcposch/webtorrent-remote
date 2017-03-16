@@ -211,5 +211,5 @@ function getTorrentByKey (client, torrentKey) {
 }
 
 function generateUniqueKey () {
-  return crypto.randomBytes(16).toString('hex')
+  return Math.random().toString(16).slice(2)
 }
