@@ -16,7 +16,7 @@
   },
   "homepage": "https://github.com/dcposch/webtorrent-remote#readme",
   "devDependencies": {
-    "standard": "^8.5.0"
+    "standard": "*"
   },
   "dependencies": {
     "webtorrent": "0.x"
