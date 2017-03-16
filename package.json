@@ -19,6 +19,7 @@
     "standard": "*"
   },
   "dependencies": {
+    "debug": "^2.6.3",
     "webtorrent": "0.x"
   }
 }
