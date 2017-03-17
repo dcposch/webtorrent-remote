@@ -63,7 +63,7 @@ WebTorrentRemoteServer.prototype.receive = function (message) {
 }
 
 // Returns the underlying WebTorrent object, lazily creating it if needed
-WebTorrentRemoteServer.prototype._webtorrent = function () {
+WebTorrentRemoteServer.prototype.webtorrent = function () {
   if (!this._webtorrent) {
     this._webtorrent = new WebTorrent(this._webtorrentOpts)
     addWebTorrentEvents(this)
@@ -100,17 +100,24 @@ function handleSubscribe (server, message) {
   var wt = server._webtorrent // Don't create the webtorrent instance
   var clientKey = message.clientKey
   var torrentKey = message.torrentKey
-  var torrentId = message.torrentId
 
-  // See if we've already joined this swarm
-  var infoHash = parseTorrent(torrentId).infoHash
-  var torrent = wt && wt.torrents.find(function (t) { return t.infoHash === infoHash })
+  // See if this torrent is already added
+  parseTorrent.remote(message.torrentId, function (err, parsedTorrent) {
+    if (err) {
+      sendSubscribed(server, null, clientKey, torrentKey)
+    } else {
+      var torrent = wt && wt.torrents.find(function (t) {
+        return t.infoHash === parsedTorrent.infoHash
+      })
 
-  // If so, listen for updates
-  if (torrent) torrent.clients.push({clientKey: clientKey, torrentKey: torrentKey})
+      // If so, listen for updates
+      if (torrent) {
+        torrent.clients.push({clientKey: clientKey, torrentKey: torrentKey})
+      }
 
-  // Either way, respond
-  sendSubscribed(server, torrent, clientKey, torrentKey)
+      sendSubscribed(server, torrent, clientKey, torrentKey)
+    }
+  })
 }
 
 // Emits the 'torrent-subscribed' event
@@ -123,40 +130,50 @@ function sendSubscribed (server, torrent, clientKey, torrentKey) {
   }
 
   if (torrent) {
-    var infoMessage = getInfoMessage(server, torrent, '')
-    var progressMessage = getProgressMessage(server, torrent, '')
-    response.torrent = Object.assign(infoMessage.torrent, progressMessage.torrent)
+    response.torrent = Object.assign(
+      getInfoMessage(server, torrent, '').torrent,
+      getProgressMessage(server, torrent, '').torrent
+    )
   }
 
   send(server, response)
 }
 
 function handleAddTorrent (server, message) {
-  var wt = server._webtorrent()
-
-  // First, see if we've already joined this swarm
-  var parsed = parseTorrent(message.torrentId)
-  var infoHash = parsed.infoHash
-  var torrent = wt.torrents.find(function (t) { return t.infoHash === infoHash })
-
-  // If not, join the swarm
-  if (!torrent) {
-    debug('joining swarm: ' + infoHash + ' ' + (parsed.name || ''))
-    torrent = wt.add(message.torrentId, message.opts)
-    torrent.clients = []
-    server._torrents.push(torrent)
-    addTorrentEvents(server, torrent)
-  }
-
-  // Either way, subscribe this client to future updates for this swarm
+  var wt = server.webtorrent()
   var clientKey = message.clientKey
   var torrentKey = message.torrentKey
-  torrent.clients.push({clientKey: clientKey, torrentKey: torrentKey})
 
-  // If we want a server, create a server and wait for it to start listening
-  var respond = function () { sendSubscribed(server, torrent, clientKey, torrentKey) }
-  if (message.opts.server) createServer(torrent, message.server, respond)
-  else respond()
+  console.log(message.torrentId)
+
+  // First, see if we've already joined this swarm
+  parseTorrent.remote(message.torrentId, function (err, parsedTorrent) {
+    if (err) {
+      sendSubscribed(server, null, clientKey, torrentKey)
+    } else {
+      var infoHash = parsedTorrent.infoHash
+      var torrent = wt.torrents.find(function (t) {
+        return t.infoHash === infoHash
+      })
+
+      // If not, add the torrent to the client
+      if (!torrent) {
+        debug('add torrent: ' + infoHash + ' ' + (parsedTorrent.name || ''))
+        torrent = wt.add(message.torrentId, message.opts)
+        torrent.clients = []
+        server._torrents.push(torrent)
+        addTorrentEvents(server, torrent)
+      }
+
+      // Either way, subscribe this client to future updates for this swarm
+      torrent.clients.push({
+        clientKey: clientKey,
+        torrentKey: torrentKey
+      })
+
+      sendSubscribed(server, torrent, clientKey, torrentKey)
+    }
+  })
 }
 
 function handleCreateServer (server, message) {
@@ -164,32 +181,29 @@ function handleCreateServer (server, message) {
   var torrentKey = message.torrentKey
   var torrent = getTorrentByKey(server, torrentKey)
   if (!torrent) return
-  createServer(torrent, message.opts, function () {
-    var serverURL = torrent.serverURL
+
+  function done () {
     send(server, {
       clientKey: clientKey,
       torrentKey: torrentKey,
-      serverURL: serverURL,
+      serverAddress: torrent.serverAddress,
       type: 'server-ready'
     })
-  })
-}
+  }
 
-function createServer (torrent, opts, callback) {
-  if (torrent.serverURL) {
+  if (torrent.serverAddress) {
     // Server already exists. Call back right away
-    callback()
+    done()
   } else if (torrent.pendingServerCallbacks) {
     // Server pending
     // listen() has already been called, but the 'listening' event hasn't fired yet
-    torrent.pendingServerCallbacks.push(callback)
+    torrent.pendingServerCallbacks.push(done)
   } else {
     // Server does not yet exist. Create it, then notify everyone who asked for it
-    torrent.pendingServerCallbacks = [callback]
-    torrent.server = torrent.createServer(opts)
+    torrent.pendingServerCallbacks = [done]
+    torrent.server = torrent.createServer()
     torrent.server.listen(function () {
-      var addr = torrent.server.address()
-      torrent.serverURL = 'http://localhost:' + addr.port
+      torrent.serverAddress = torrent.server.address()
       torrent.pendingServerCallbacks.forEach(function (cb) { cb() })
       delete torrent.pendingServerCallbacks
     })
@@ -206,11 +220,9 @@ function handleHeartbeat (server, message) {
 // If the torrent has no clients left, destroys the torrent
 function handleDestroy (server, message) {
   var clientKey = message.clientKey
-  var opts = message.opts
   debug('destroying client ' + clientKey)
-  var kill = function () { killClients(server, [clientKey]) }
-  if (opts && opts.delay) setTimeout(kill, opts.delay)
-  else kill()
+
+  killClients(server, [clientKey])
 }
 
 function sendInfo (server, torrent, type) {
@@ -230,8 +242,7 @@ function getInfoMessage (server, torrent, type) {
       name: torrent.name,
       infoHash: torrent.infoHash,
       length: torrent.length,
-      serverURL: torrent.serverURL,
-      // torrentFile: torrent.torrentFile,
+      serverAddress: torrent.serverAddress,
       files: (torrent.files || []).map(function (file) {
         return {
           name: file.name,
@@ -305,7 +316,9 @@ function killClients (server, clientKeys) {
   // Remove clients from torrents
   // If a torrent has no clients left, kill the torrent
   server._torrents.forEach(function (torrent) {
-    torrent.clients = torrent.clients.filter(function (c) { return !deadClientKeys[c.clientKey] })
+    torrent.clients = torrent.clients.filter(function (c) {
+      return !deadClientKeys[c.clientKey]
+    })
     if (torrent.clients.length > 0) return
     torrent.destroy()
     debug('torrent destroyed, all clients died: ' + torrent.name)
@@ -336,7 +349,7 @@ function sendToAllClients (server, message) {
 }
 
 function getTorrentByKey (server, torrentKey) {
-  var torrent = server._webtorrent().torrents.find(function (t) { return hasTorrentKey(t, torrentKey) })
+  var torrent = server.webtorrent().torrents.find(function (t) { return hasTorrentKey(t, torrentKey) })
   if (!torrent) {
     var message = 'missing torrentKey: ' + torrentKey
     sendError(server, null, {message: message}, 'warning')
