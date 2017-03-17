@@ -14,7 +14,6 @@ var WebTorrent = require('webtorrent')
  * - opts is passed to the WebTorrent varructor
  */
 function WebTorrentRemoteServer (send, opts) {
-  console.log('LOCAL COPY')
   this._send = send
   this._webtorrent = null
   this._clients = {}
@@ -140,11 +139,8 @@ function sendSubscribed (server, torrent, clientKey, torrentKey) {
 }
 
 function handleAddTorrent (server, message) {
-  var wt = server.webtorrent()
   var clientKey = message.clientKey
   var torrentKey = message.torrentKey
-
-  console.log(message.torrentId)
 
   // First, see if we've already joined this swarm
   parseTorrent.remote(message.torrentId, function (err, parsedTorrent) {
@@ -152,14 +148,14 @@ function handleAddTorrent (server, message) {
       sendSubscribed(server, null, clientKey, torrentKey)
     } else {
       var infoHash = parsedTorrent.infoHash
-      var torrent = wt.torrents.find(function (t) {
+      var torrent = server._torrents.find(function (t) {
         return t.infoHash === infoHash
       })
 
       // If not, add the torrent to the client
       if (!torrent) {
         debug('add torrent: ' + infoHash + ' ' + (parsedTorrent.name || ''))
-        torrent = wt.add(message.torrentId, message.opts)
+        torrent = server.webtorrent().add(message.torrentId, message.opts)
         torrent.clients = []
         server._torrents.push(torrent)
         addTorrentEvents(server, torrent)
@@ -220,9 +216,8 @@ function handleHeartbeat (server, message) {
 // If the torrent has no clients left, destroys the torrent
 function handleDestroy (server, message) {
   var clientKey = message.clientKey
+  killClient(server, clientKey)
   debug('destroying client ' + clientKey)
-
-  killClients(server, [clientKey])
 }
 
 function sendInfo (server, torrent, type) {
@@ -242,7 +237,6 @@ function getInfoMessage (server, torrent, type) {
       name: torrent.name,
       infoHash: torrent.infoHash,
       length: torrent.length,
-      serverAddress: torrent.serverAddress,
       files: (torrent.files || []).map(function (file) {
         return {
           name: file.name,
@@ -293,45 +287,49 @@ function sendUpdates (server) {
 
 function removeDeadClients (server, heartbeatTimeout) {
   var now = Date.now()
-  var clientKeys = []
   for (var clientKey in server._clients) {
     var client = server._clients[clientKey]
     if (now - client.heartbeat <= heartbeatTimeout) continue
+    killClient(server, clientKey)
     debug('torrent client died, clientKey: ' + clientKey)
-    clientKeys.push(clientKey)
   }
-  killClients(server, clientKeys)
 }
 
-function killClients (server, clientKeys) {
-  if (!clientKeys || clientKeys.length === 0) return
-
-  // Remove clients
-  var deadClientKeys = {}
-  clientKeys.forEach(function (clientKey) {
-    delete server._clients[clientKey]
-    deadClientKeys[clientKey] = true
-  })
+function killClient (server, clientKey) {
+  // Remove client from server
+  delete server._clients[clientKey]
 
   // Remove clients from torrents
-  // If a torrent has no clients left, kill the torrent
   server._torrents.forEach(function (torrent) {
     torrent.clients = torrent.clients.filter(function (c) {
-      return !deadClientKeys[c.clientKey]
+      return c.clientKey !== clientKey
     })
-    if (torrent.clients.length > 0) return
-    torrent.destroy()
-    debug('torrent destroyed, all clients died: ' + torrent.name)
-  })
 
-  // Remove torrents. If the last torrent is gone, kill the whole WebTorrent
-  // instance
-  server._torrents = server._torrents.filter(function (t) { return !t.destroyed })
-  if (server._torrents.length === 0 && server._webtorrent) {
-    server._webtorrent.destroy()
-    server._webtorrent = null
-    debug('client instance destroyed, all torrents gone')
-  }
+    if (torrent.clients.length === 0) {
+      debug('torrent has no clients left, destroy after 10s: ' + torrent.name)
+      setTimeout(destroyTorrent, 10000)
+    }
+
+    function destroyTorrent () {
+      if (torrent.clients.length > 0) {
+        return debug('torrent has new clients, skipping destroy')
+      }
+      debug('torrent destroyed, all clients died: ' + torrent.name)
+      torrent.destroy()
+
+      // Remove destroyed torrents from server
+      server._torrents = server._torrents.filter(function (t) {
+        return !t.destroyed
+      })
+
+      // If the last torrent is gone, kill the whole WebTorrent instance
+      if (server._webtorrent && server._torrents.length === 0) {
+        server._webtorrent.destroy()
+        server._webtorrent = null
+        debug('webtorrent destroyed, no torrents left')
+      }
+    }
+  })
 }
 
 function sendToTorrentClients (server, torrent, message) {
