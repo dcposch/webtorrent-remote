@@ -2,6 +2,7 @@ module.exports = WebTorrentRemoteServer
 
 var debug = require('debug')('webtorrent-remote')
 var parseTorrent = require('parse-torrent')
+var throttle = require('throttleit')
 var WebTorrent = require('webtorrent')
 
 /**
@@ -85,8 +86,8 @@ function addWebTorrentEvents (server) {
 function addTorrentEvents (server, torrent) {
   torrent.on('infohash', function () { sendInfo(server, torrent, 'infohash') })
   torrent.on('metadata', function () { sendInfo(server, torrent, 'metadata') })
-  torrent.on('download', function () { sendProgress(server, torrent, 'download') })
-  torrent.on('upload', function () { sendProgress(server, torrent, 'upload') })
+  torrent.on('download', throttle(function () { sendProgress(server, torrent, 'download') }, 1000))
+  torrent.on('upload', throttle(function () { sendProgress(server, torrent, 'upload') }, 1000))
   torrent.on('done', function () { sendProgress(server, torrent, 'done') })
   torrent.on('warning', function (e) { sendError(server, torrent, e, 'warning') })
   torrent.on('error', function (e) { sendError(server, torrent, e, 'error') })

@@ -20,6 +20,7 @@
   },
   "dependencies": {
     "debug": "^2.6.3",
+    "throttleit": "^1.0.0",
     "webtorrent": "0.x"
   }
 }
