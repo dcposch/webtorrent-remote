@@ -1,4 +1,11 @@
-# webtorrent-remote
+# webtorrent-remote [![npm][npm-image]][npm-url] [![downloads][downloads-image]][downloads-url] [![javascript style guide][standard-image]][standard-url]
+
+[npm-image]: https://img.shields.io/npm/v/webtorrent-remote.svg
+[npm-url]: https://npmjs.org/package/webtorrent-remote
+[downloads-image]: https://img.shields.io/npm/dm/webtorrent-remote.svg
+[downloads-url]: https://npmjs.org/package/webtorrent-remote
+[standard-image]: https://img.shields.io/badge/code_style-standard-brightgreen.svg
+[standard-url]: https://standardjs.com
 
 run WebTorrent in one process, control it from another process or even another machine.
 
