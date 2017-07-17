@@ -163,15 +163,16 @@ RemoteTorrent.prototype = Object.create(EventEmitter.prototype)
  * Creates a streaming torrent-to-HTTP server
  * - opts can contain {headers, ...}
  */
-RemoteTorrent.prototype.createServer = function () {
-  this.server = new RemoteTorrentServer(this)
+RemoteTorrent.prototype.createServer = function (opts) {
+  this.server = new RemoteTorrentServer(this, opts)
   return this.server
 }
 
-function RemoteTorrentServer (torrent) {
+function RemoteTorrentServer (torrent, opts) {
   EventEmitter.call(this)
 
   this.torrent = torrent
+  this._createServerOpts = opts
   this._addr = null
 }
 
@@ -186,7 +187,8 @@ RemoteTorrentServer.prototype.listen = function (onlistening) {
   this.torrent.client._send({
     type: 'create-server',
     clientKey: this.torrent.client.clientKey,
-    torrentKey: this.torrent.key
+    torrentKey: this.torrent.key,
+    opts: this._createServerOpts
   })
 }
 

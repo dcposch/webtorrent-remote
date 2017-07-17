@@ -176,6 +176,7 @@ function handleAddTorrent (server, message) {
 function handleCreateServer (server, message) {
   var clientKey = message.clientKey
   var torrentKey = message.torrentKey
+  var opts = message.opts
   var torrent = getTorrentByKey(server, torrentKey)
   if (!torrent) return
 
@@ -198,7 +199,7 @@ function handleCreateServer (server, message) {
   } else {
     // Server does not yet exist. Create it, then notify everyone who asked for it
     torrent.pendingServerCallbacks = [done]
-    torrent.server = torrent.createServer()
+    torrent.server = torrent.createServer(opts)
     torrent.server.listen(function () {
       torrent.serverAddress = torrent.server.address()
       torrent.pendingServerCallbacks.forEach(function (cb) { cb() })
