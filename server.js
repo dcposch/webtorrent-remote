@@ -200,7 +200,7 @@ function handleCreateServer (server, message) {
     // Server does not yet exist. Create it, then notify everyone who asked for it
     torrent.pendingServerCallbacks = [done]
     torrent.server = torrent.createServer(opts)
-    torrent.server.listen(function () {
+    torrent.server.listen(undefined, 'localhost', undefined, function () {
       torrent.serverAddress = torrent.server.address()
       torrent.pendingServerCallbacks.forEach(function (cb) { cb() })
       delete torrent.pendingServerCallbacks
